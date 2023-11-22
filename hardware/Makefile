@@ -5,6 +5,7 @@
 # Author: Matheus Cavalcante <matheusd@iis.ee.ethz.ch>
 
 SHELL = /usr/bin/env bash
+JOBS ?= 4
 ROOT_DIR := $(patsubst %/,%, $(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
 ARA_DIR := $(shell git rev-parse --show-toplevel 2>/dev/null || echo $$ARA_DIR)
 INSTALL_DIR := $(abspath $(ROOT_DIR)/../install)
@@ -200,7 +201,7 @@ $(veril_library)/V$(veril_top): $(config_file) Makefile ../Bender.yml $(shell fi
   --cc                                                                          \
   $(if $(trace),--trace-fst -Wno-INSECURE,)                                     \
   --top-module $(veril_top) &&                                                  \
-	cd $(veril_library) && OBJCACHE='' make -j4 -f V$(veril_top).mk
+	cd $(veril_library) && OBJCACHE='' make -j$(JOBS) -f V$(veril_top).mk
 
 # Simulation
 .PHONY: simv
