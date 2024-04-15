@@ -29,6 +29,7 @@ include $(COMMON_DIR)/default_args.mk
 APPS := $(patsubst $(APPS_DIR)/%/main.c,%,$(shell find $(APPS_DIR) -name "main.c"))
 # Don't automatically compile the benchmark app, which is only a wrapper around the other apps
 BINARIES := $(filter-out bin/benchmarks, $(addprefix bin/,$(APPS)))
+# BINARIES2 := $(filter-out bin/benchmarks, $(addprefix bin/,$(APPS)))
 
 CVA6_EXTENSIONS := rv64ui rv64uc rv64um rv64uf rv64ud rv64si
 # Atomics are messy, since there is currently no memory region capable of handling them
@@ -44,6 +45,7 @@ bin/fft%: ENV_DEFINES += -DFFT_SAMPLES=$(subst ",,$(firstword $(def_args_fft)))
 endif
 
 all: $(BINARIES)
+all2: $(BINARIES2)
 
 # Pre-process the linker-script to correclty align the sections
 .PHONY: linker_script

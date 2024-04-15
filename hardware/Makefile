@@ -176,6 +176,8 @@ $(veril_library)/V$(veril_top): $(config_file) Makefile ../Bender.yml $(shell fi
   -Wno-LITENDIAN                                                                \
   -Wno-UNOPTFLAT                                                                \
   -Wno-UNPACKED                                                                 \
+  -Wno-INSECURE                                                                 \
+  --trace-fst \
   -Wno-UNSIGNED                                                                 \
   -Wno-WIDTH                                                                    \
   -Wno-WIDTHCONCAT                                                              \
@@ -200,7 +202,7 @@ $(veril_library)/V$(veril_top): $(config_file) Makefile ../Bender.yml $(shell fi
   --cc                                                                          \
   $(if $(trace),--trace-fst -Wno-INSECURE,)                                     \
   --top-module $(veril_top) &&                                                  \
-	cd $(veril_library) && OBJCACHE='' make -j4 -f V$(veril_top).mk
+	cd $(veril_library) && OBJCACHE='' make -j36 -f V$(veril_top).mk
 
 # Simulation
 .PHONY: simv
