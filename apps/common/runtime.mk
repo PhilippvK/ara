@@ -86,8 +86,10 @@ RISCV_WARNINGS += -Wunused-variable -Wall -Wextra -Wno-unused-command-line-argum
 LLVM_FLAGS     ?= -march=rv64gcv_zfh_zvfh0p1 -menable-experimental-extensions -mabi=$(RISCV_ABI) -mno-relax -fuse-ld=lld
 LLVM_V_FLAGS   ?= -fno-vectorize -mllvm -scalable-vectorization=off -mllvm -riscv-v-vector-bits-min=0 -Xclang -target-feature -Xclang +no-optimized-zero-stride-load
 RISCV_FLAGS    ?= $(LLVM_FLAGS) $(LLVM_V_FLAGS) -mcmodel=medany -I$(CURDIR)/common -std=gnu99 -O3 -ffast-math -fno-common -fno-builtin-printf $(DEFINES) $(RISCV_WARNINGS)
-RISCV_CCFLAGS  ?= $(RISCV_FLAGS) -ffunction-sections -fdata-sections
-RISCV_CCFLAGS_SPIKE  ?= $(RISCV_FLAGS) $(SPIKE_CCFLAGS) -ffunction-sections -fdata-sections
+# RISCV_CCFLAGS  ?= $(RISCV_FLAGS) -ffunction-sections -fdata-sections
+RISCV_CCFLAGS  ?= $(RISCV_FLAGS) -ffunction-sections -fdata-sections -DUSE_VEXT
+# RISCV_CCFLAGS_SPIKE  ?= $(RISCV_FLAGS) $(SPIKE_CCFLAGS) -ffunction-sections -fdata-sections
+RISCV_CCFLAGS_SPIKE  ?= $(RISCV_FLAGS) $(SPIKE_CCFLAGS) -ffunction-sections -fdata-sections -DUSE_VEXT
 RISCV_CXXFLAGS ?= $(RISCV_FLAGS) -ffunction-sections -fdata-sections
 RISCV_LDFLAGS  ?= -static -nostartfiles -lm -Wl,--gc-sections
 RISCV_LDFLAGS_SPIKE  ?= $(RISCV_LDFLAGS) $(SPIKE_LDFLAGS) -Wl,--gc-sections
