@@ -5,12 +5,14 @@
 # Author: Matheus Cavalcante <matheusd@iis.ee.ethz.ch>
 
 SHELL = /usr/bin/env bash
-JOBS ?= 4
 ROOT_DIR := $(patsubst %/,%, $(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
 ARA_DIR := $(shell git rev-parse --show-toplevel 2>/dev/null || echo $$ARA_DIR)
 INSTALL_DIR := $(abspath $(ROOT_DIR)/../install)
 RISCV_ISA_SIM_INSTALL_DIR := $(INSTALL_DIR)/riscv-isa-sim/
 VERILATOR_INCLUDE := $(INSTALL_DIR)/verilator/share/verilator/include/vltstd
+
+BENDER         := $(ROOT_DIR)/../hardware/bender
+BENDER_VERSION := 0.27.3
 
 # Choose Ara's configuration
 ifndef config
@@ -95,7 +97,7 @@ ifdef preload
 	questa_args += +PRELOAD=$(preload)
 endif
 questa_args += -sv_lib $(dpi_library)/ara_dpi -work $(library) -voptargs=+acc
-questa_args += -suppress vsim-3009 -suppress vopt-7033
+questa_args += -suppress vsim-3009 -suppress vopt-7033 -suppress vopt-8386
 
 # DPI source files
 dpi   := $(patsubst tb/dpi/%.cc,$(buildpath)/$(dpi_library)/%.o,$(wildcard tb/dpi/*.cc))
@@ -103,8 +105,14 @@ dpi   := $(patsubst tb/dpi/%.cc,$(buildpath)/$(dpi_library)/%.o,$(wildcard tb/dp
 vlog_args += -suppress vlog-2583 -suppress vlog-13314 -suppress vlog-13233
 vlog_args += -work $(library)
 
+# Bender
 # Defines
-bender_defs += --define NR_LANES=$(nr_lanes) --define VLEN=$(vlen) --define RVV_ARIANE=1
+bender_defs += --define NR_LANES=$(nr_lanes) --define VLEN=$(vlen) --define ARIANE_ACCELERATOR_PORT=1
+# Targets
+bender_common_targs := -t rtl -t cv64a6_imafdcv_sv39 -t tech_cells_generic_include_tc_sram -t tech_cells_generic_include_tc_clk
+bender_targs_simc     := $(bender_common_targs) -t ara_test -t cva6_test
+bender_targs_veril    := $(bender_common_targs) -t ara_test -t cva6_test -t verilator
+bender_targs_spyglass := $(bender_common_targs) -t spyglass
 
 # Default target
 all: compile
@@ -113,11 +121,21 @@ all: compile
 $(buildpath):
 	mkdir -p $(buildpath)
 
+.PHONY: bender update
 # Bender
-bender:
-	@[ -x ./bender ] && echo "Bender already exists." || \
-	curl --proto '=https' --tlsv1.2 https://fabianschuiki.github.io/bender/init -sSf | sh	-s -- 0.23.1
+bender: $(BENDER)
+$(BENDER):
+	@[ -x $(BENDER) ] && echo "Bender already exists." || \
+	curl --proto '=https' --tlsv1.2 https://pulp-platform.github.io/bender/init -sSf | sh	-s -- $(BENDER_VERSION)
 	@echo "$$(./bender --version) available."
+
+update: $(BENDER) $(ROOT_DIR)/../Bender.yml
+	rm -rf $(ROOT_DIR)/../hardware/deps/*
+	$(BENDER) update -f
+	$(BENDER) checkout
+
+checkout: $(BENDER)
+	$(BENDER) checkout
 
 # Patches
 .PHONY: apply-patches
@@ -134,11 +152,11 @@ $(buildpath)/$(library):
 .PHONY: compile
 compile: dpi lib $(buildpath) bender $(buildpath)/compile_$(config).tcl
 $(buildpath)/compile_$(config).tcl: $(config_file) Makefile ../Bender.yml $(shell find src -type f) $(shell find ../config -type f) $(shell find include -type f) $(shell find tb -type f) $(shell find deps -type f)
-	./bender script vsim --vlog-arg="$(vlog_args)" -t rtl -t asic -t ara_test -t cva6_test $(bender_defs) > $(buildpath)/compile_$(config).tcl
+	$(BENDER) script vsim --vlog-arg="$(vlog_args)" $(bender_targs_simc) $(bender_defs) > $(buildpath)/compile_$(config).tcl
 	echo "exit" >> $(buildpath)/compile_$(config).tcl
 	cd $(buildpath) && $(questa_cmd) vsim -work $(library) -c -do compile_$(config).tcl
-	# Remove the file if compilation did not succeed
-	if [ `cat $(buildpath)/transcript | grep "\*\* Error" | wc -l` -ne 0 ]; then rm $(buildpath)/compile_$(config).tcl; fi
+	# Rename the file if compilation did not succeed
+	if [ `cat $(buildpath)/transcript | grep "\*\* Error" | wc -l` -ne 0 ]; then mv $(buildpath)/compile_$(config).tcl $(buildpath)/compile_$(config).tcl.ERROR; fi
 
 # Simulation
 .PHONY: sim
@@ -166,11 +184,13 @@ verilate: $(buildpath) bender $(veril_library)/V$(veril_top)
 
 $(veril_library)/V$(veril_top): $(config_file) Makefile ../Bender.yml $(shell find src -type f) $(shell find ../config -type f) $(shell find include -type f) $(shell find tb -type f) $(shell find deps -type f)
 	rm -rf $(veril_library); mkdir -p $(veril_library)
-	./bender script verilator -t rtl -t ara_test -t cva6_test -t verilator $(bender_defs) > $(veril_library)/bender_script_$(config)
+	$(BENDER) script verilator $(bender_targs_veril) $(bender_defs) > $(veril_library)/bender_script_$(config)
 # Verilate the design
 	$(veril_path)/verilator -f $(veril_library)/bender_script_$(config)           \
   -GNrLanes=$(nr_lanes)                                                         \
   -O3                                                                           \
+  -Wno-fatal                                                                    \
+  -Wno-PINCONNECTEMPTY                                                          \
   -Wno-BLKANDNBLK                                                               \
   -Wno-CASEINCOMPLETE                                                           \
   -Wno-CMPCONST                                                                 \
@@ -181,6 +201,8 @@ $(veril_library)/V$(veril_top): $(config_file) Makefile ../Bender.yml $(shell fi
   -Wno-UNSIGNED                                                                 \
   -Wno-WIDTH                                                                    \
   -Wno-WIDTHCONCAT                                                              \
+  -Wno-ENUMVALUE                                                                \
+  -Wno-COMBDLY                                                                  \
   --hierarchical                                                                \
   tb/verilator/waiver.vlt                                                       \
   --Mdir $(veril_library)                                                       \
@@ -202,7 +224,7 @@ $(veril_library)/V$(veril_top): $(config_file) Makefile ../Bender.yml $(shell fi
   --cc                                                                          \
   $(if $(trace),--trace-fst -Wno-INSECURE,)                                     \
   --top-module $(veril_top) &&                                                  \
-	cd $(veril_library) && OBJCACHE='' make -j$(JOBS) -f V$(veril_top).mk
+	cd $(veril_library) && OBJCACHE='' make -j4 -f V$(veril_top).mk
 
 # Simulation
 .PHONY: simv
@@ -224,7 +246,7 @@ lint: spyglass/tmp/files spyglass/sdc/func.sdc spyglass/scripts/run_lint.tcl
 
 spyglass/tmp/files: $(bender)
 	mkdir -p spyglass/tmp
-	./bender script verilator -t rtl -t spyglass -t cva6_test $(bender_defs) --define SPYGLASS > spyglass/tmp/files
+	$(BENDER) script verilator $(bender_targs_spyglass) $(bender_defs) --define SPYGLASS > spyglass/tmp/files
 
 # DPIs
 .PHONY: dpi
@@ -243,4 +265,4 @@ $(buildpath)/$(dpi_library)/ara_dpi.so: $(dpi)
 .PHONY: clean
 clean:
 	rm -rf $(buildpath)
-	rm -f bender
+	rm -f  $(BENDER)
